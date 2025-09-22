@@ -14,8 +14,183 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from jwt import PyJWKClient, decode
 from jwt.exceptions import PyJWTError
+from .session_storage import create_session_storage
 
 logger = logging.getLogger("synapse_mcp.auth")
+
+
+class SessionAwareOAuthProxy(OAuthProxy):
+    """Extended OAuth proxy that tracks session-to-token mappings using Redis."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Use Redis-backed session storage for scalability
+        self._session_storage = create_session_storage()
+
+    async def _handle_idp_callback(self, request, *args, **kwargs):
+        """Override callback handling to capture session context."""
+        # Get the session ID from the request context if available
+        session_id = None
+        try:
+            # Try to extract session ID from request headers or context
+            if hasattr(request, 'headers'):
+                session_id = request.headers.get("mcp-session-id")
+
+            # Try to get from request state/context
+            if not session_id and hasattr(request, 'state'):
+                session_context = getattr(request.state, 'session_context', None)
+                if session_context and hasattr(session_context, 'session_id'):
+                    session_id = session_context.session_id
+
+            logger.debug(f"OAuth callback processing for session: {session_id}")
+        except Exception as e:
+            logger.debug(f"Could not extract session ID from callback: {e}")
+
+        # Call the parent implementation
+        result = await super()._handle_idp_callback(request, *args, **kwargs)
+
+        # After successful callback, map any new tokens to user subjects
+        if result:
+            try:
+                await self._map_new_tokens_to_users()
+            except Exception as e:
+                logger.warning(f"Failed to map tokens to users: {e}")
+
+        return result
+
+    async def _map_new_tokens_to_users(self):
+        """Map any newly created tokens to their user subjects."""
+        try:
+            # Get all existing user subjects to find unmapped tokens
+            existing_users = await self._session_storage.get_all_user_subjects()
+
+            # Find tokens that aren't mapped to any user yet
+            unmapped_tokens = []
+            for token_key in self._access_tokens:
+                # Check if this token is already mapped to any user
+                existing_user = await self._session_storage.find_user_by_token(token_key)
+                if not existing_user:
+                    unmapped_tokens.append(token_key)
+
+            # Map unmapped tokens to their user subjects by decoding the JWT
+            for token_key in unmapped_tokens:
+                try:
+                    import jwt
+                    # Decode token to get user subject
+                    decoded = jwt.decode(token_key, options={"verify_signature": False})
+                    user_subject = decoded.get('sub')
+
+                    if user_subject:
+                        # Store the mapping with 1-hour TTL (can be configured)
+                        await self._session_storage.set_user_token(user_subject, token_key, ttl_seconds=3600)
+                        logger.info(f"Mapped token {token_key[:20]}*** to user {user_subject}")
+                    else:
+                        logger.warning(f"Token {token_key[:20]}*** has no subject claim")
+
+                except Exception as e:
+                    logger.warning(f"Failed to decode token {token_key[:20]}***: {e}")
+
+        except Exception as e:
+            logger.error(f"Error mapping tokens to users: {e}")
+
+    async def get_user_token(self, user_subject: str) -> str | None:
+        """Get the access token for a specific user subject."""
+        try:
+            token_key = await self._session_storage.get_user_token(user_subject)
+            if token_key and token_key in self._access_tokens:
+                return token_key
+            return None
+        except Exception as e:
+            logger.error(f"Error getting user token: {e}")
+            return None
+
+    async def cleanup_user_tokens(self, user_subject: str):
+        """Clean up tokens for a specific user."""
+        try:
+            token_key = await self._session_storage.get_user_token(user_subject)
+            if token_key:
+                # Remove from OAuth proxy
+                if token_key in self._access_tokens:
+                    del self._access_tokens[token_key]
+
+                # Remove from session storage
+                await self._session_storage.remove_user_token(user_subject)
+
+                logger.info(f"Cleaned up token for user {user_subject}")
+        except Exception as e:
+            logger.error(f"Error cleaning up user tokens: {e}")
+
+    async def cleanup_expired_tokens(self):
+        """Clean up expired tokens from both OAuth proxy and session storage."""
+        try:
+            # Clean up from session storage first
+            await self._session_storage.cleanup_expired_tokens()
+
+            # Then clean up orphaned tokens from OAuth proxy
+            existing_users = await self._session_storage.get_all_user_subjects()
+            mapped_tokens = set()
+
+            for user_subject in existing_users:
+                token = await self._session_storage.get_user_token(user_subject)
+                if token:
+                    mapped_tokens.add(token)
+
+            # Remove unmapped tokens from OAuth proxy, but only if they're old enough
+            # This prevents removing tokens that were just created but not yet mapped
+            oauth_tokens = set(self._access_tokens.keys())
+            unmapped_tokens = oauth_tokens - mapped_tokens
+
+            truly_orphaned = []
+            for token in unmapped_tokens:
+                # Check if this is a fresh token (might not be mapped yet)
+                if self._is_token_old_enough_to_cleanup(token):
+                    truly_orphaned.append(token)
+                else:
+                    logger.debug(f"Skipping cleanup of recent unmapped token {token[:20]}***")
+
+            for token in truly_orphaned:
+                if token in self._access_tokens:
+                    del self._access_tokens[token]
+
+            if truly_orphaned:
+                logger.info(f"Cleaned up {len(truly_orphaned)} truly orphaned tokens from OAuth proxy")
+
+        except Exception as e:
+            logger.error(f"Error during expired token cleanup: {e}")
+
+    def _is_token_old_enough_to_cleanup(self, token: str, min_age_seconds: int = 30) -> bool:
+        """
+        Check if a token is old enough to be considered truly orphaned.
+
+        This prevents removing tokens that were just created during OAuth flow
+        but haven't been mapped to a session yet.
+        """
+        try:
+            import jwt
+            from datetime import datetime, timedelta
+
+            # Decode token to get creation time (iat claim)
+            decoded = jwt.decode(token, options={"verify_signature": False})
+            iat = decoded.get('iat')
+
+            if not iat:
+                # If no iat claim, assume it's old enough
+                return True
+
+            token_age = datetime.utcnow().timestamp() - iat
+            is_old_enough = token_age > min_age_seconds
+
+            if not is_old_enough:
+                logger.debug(f"Token is only {token_age:.1f}s old, keeping for now")
+
+            return is_old_enough
+
+        except Exception as e:
+            logger.debug(f"Error checking token age, assuming old enough: {e}")
+            # If we can't determine age, err on the side of caution
+            return True
+
+
 
 class SynapseJWTVerifier:
     """Custom JWT verifier for Synapse tokens that returns FastMCP-compatible results; 
@@ -246,7 +421,7 @@ def create_oauth_proxy():
     # - modify: Create or change content
     # - authorize: Authorize access and share resources
     # - offline_access: Access resources when user is not logged in
-    auth = OAuthProxy(
+    auth = SessionAwareOAuthProxy(
         upstream_authorization_endpoint="https://signin.synapse.org",
         upstream_token_endpoint="https://repo-prod.prod.sagebase.org/auth/v1/oauth2/token",
         upstream_client_id=client_id,
