@@ -1,6 +1,6 @@
 """Core MCP application setup."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 from fastmcp import FastMCP
@@ -25,7 +25,7 @@ async def health_check(request: Request) -> JSONResponse:
         {
             "status": "healthy",
             "service": "synapse-mcp",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "version": "0.2.0",
             "is_oauth_configured": bool(
                 os.environ.get("SYNAPSE_OAUTH_CLIENT_ID")

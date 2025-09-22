@@ -1,6 +1,6 @@
 """In-memory session storage for development and testing."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Set
 import logging
 
@@ -18,9 +18,10 @@ class InMemorySessionStorage(SessionStorage):
         self._token_metadata: dict[str, dict[str, str]] = {}
 
     async def set_user_token(self, user_subject: str, access_token: str, ttl_seconds: int = 3600) -> None:
+        now_utc = datetime.now(timezone.utc)
         metadata = {
-            "created_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(seconds=ttl_seconds)).isoformat(),
+            "created_at": now_utc.isoformat(),
+            "expires_at": (now_utc + timedelta(seconds=ttl_seconds)).isoformat(),
             "user_subject": user_subject,
         }
 
@@ -46,7 +47,7 @@ class InMemorySessionStorage(SessionStorage):
             logger.debug("Removed user %s from memory", user_subject)
 
     async def cleanup_expired_tokens(self) -> None:
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         expired_tokens = []
 
         for access_token, metadata in list(self._token_metadata.items()):

@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Set
 
 from .base import SessionStorage
@@ -55,9 +55,10 @@ class RedisSessionStorage(SessionStorage):
         try:
             redis_client = await self._get_redis()
 
+            now_utc = datetime.now(timezone.utc)
             metadata = {
-                "created_at": datetime.utcnow().isoformat(),
-                "expires_at": (datetime.utcnow() + timedelta(seconds=ttl_seconds)).isoformat(),
+                "created_at": now_utc.isoformat(),
+                "expires_at": (now_utc + timedelta(seconds=ttl_seconds)).isoformat(),
                 "user_subject": user_subject,
             }
 
@@ -109,7 +110,7 @@ class RedisSessionStorage(SessionStorage):
             redis_client = await self._get_redis()
             all_metadata = await redis_client.hgetall(self.token_metadata_key)
 
-            current_time = datetime.utcnow()
+            current_time = datetime.now(timezone.utc)
             expired_tokens: list[str] = []
 
             for access_token, metadata_json in all_metadata.items():
