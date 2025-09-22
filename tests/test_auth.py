@@ -4,7 +4,7 @@ import importlib
 
 import pytest
 
-auth_module = importlib.import_module("synapse_mcp.auth")
+auth_module = importlib.import_module("synapse_mcp.oauth")
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +41,11 @@ def test_create_oauth_proxy_initializes_session_aware_proxy(monkeypatch):
     def fake_proxy(*args, **kwargs):
         captured['proxy'] = {'args': args, 'kwargs': kwargs}
         return "proxy"
+
+    factory_module = importlib.import_module("synapse_mcp.oauth.factory")
+
+    monkeypatch.setattr(factory_module, "SynapseJWTVerifier", fake_verifier)
+    monkeypatch.setattr(factory_module, "SessionAwareOAuthProxy", fake_proxy)
 
     monkeypatch.setattr(auth_module, "SynapseJWTVerifier", fake_verifier)
     monkeypatch.setattr(auth_module, "SessionAwareOAuthProxy", fake_proxy)

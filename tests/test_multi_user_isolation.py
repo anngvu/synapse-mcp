@@ -91,7 +91,9 @@ def test_get_entity_operations_are_per_connection(monkeypatch):
     client1 = _make_client("user1")
     client2 = _make_client("user2")
 
-    monkeypatch.setattr(synapse_mcp, "get_synapse_client", lambda ctx: client1 if ctx is ctx1 else client2)
+    import synapse_mcp.context_helpers as context_helpers
+
+    monkeypatch.setattr(context_helpers, "get_synapse_client", lambda ctx: client1 if ctx is ctx1 else client2)
 
     ops1 = synapse_mcp.get_entity_operations(ctx1)
     ops2 = synapse_mcp.get_entity_operations(ctx2)

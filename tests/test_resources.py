@@ -46,7 +46,8 @@ def test_get_datasets_as_croissant_uses_query_table_context(monkeypatch):
         return {'data': []}
 
     monkeypatch.setattr(synapse_mcp.query_table, 'fn', fake_query_table)
-    monkeypatch.setattr(synapse_mcp, 'convert_to_croissant', lambda payload: payload)
+    import synapse_mcp.tools as tools
+    monkeypatch.setattr(tools, 'convert_to_croissant', lambda payload: payload)
 
     result = synapse_mcp.get_datasets_as_croissant.fn(ctx)
 
