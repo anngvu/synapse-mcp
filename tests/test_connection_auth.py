@@ -42,7 +42,9 @@ def patched_synapse(monkeypatch):
     created = []
 
     class DummySynapse:
-        def __init__(self):
+        def __init__(self, *args, **kwargs):
+            self.init_args = args
+            self.init_kwargs = kwargs
             self.logged_in = None
             created.append(self)
 

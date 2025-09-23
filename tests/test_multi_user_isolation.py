@@ -45,7 +45,7 @@ def test_get_synapse_client_creates_connection_scoped_clients(monkeypatch):
     ctx2 = DummyContext()
 
     clients = [_make_client("user1"), _make_client("user2")]
-    monkeypatch.setattr(connection_auth.synapseclient, "Synapse", lambda: clients.pop(0))
+    monkeypatch.setattr(connection_auth.synapseclient, "Synapse", lambda *args, **kwargs: clients.pop(0))
     monkeypatch.setenv("SYNAPSE_PAT", "fake-pat")
 
     client1 = connection_auth.get_synapse_client(ctx1)
@@ -60,7 +60,7 @@ def test_get_synapse_client_uses_cached_client(monkeypatch):
     ctx = DummyContext()
     created = []
 
-    def factory():
+    def factory(*args, **kwargs):
         client = _make_client("cached")
         created.append(client)
         return client
@@ -78,7 +78,7 @@ def test_get_synapse_client_uses_cached_client(monkeypatch):
 def test_get_synapse_client_requires_credentials(monkeypatch):
     ctx = DummyContext()
 
-    monkeypatch.setattr(connection_auth.synapseclient, "Synapse", lambda: _make_client("anon"))
+    monkeypatch.setattr(connection_auth.synapseclient, "Synapse", lambda *args, **kwargs: _make_client("anon"))
 
     with pytest.raises(ConnectionAuthError):
         connection_auth.get_synapse_client(ctx)
