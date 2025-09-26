@@ -4,6 +4,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
+from synapseclient.core.exceptions import SynapseHTTPError
 
 from .app import mcp
 from .connection_auth import get_synapse_client
@@ -77,6 +78,60 @@ def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
     except Exception as exc:  # pragma: no cover - defensive path
         return {"error": str(exc), "entity_id": entity_id}
+
+
+@mcp.tool(
+    title="Fetch Entity Provenance",
+    description="Return provenance activity for a Synapse entity, if available.",
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def get_entity_provenance(entity_id: str, ctx: Context, version: Optional[int] = None) -> Dict[str, Any]:
+    """Return provenance activity for a Synapse entity."""
+    if not validate_synapse_id(entity_id):
+        return {"error": f"Invalid Synapse ID: {entity_id}"}
+
+    version_arg: Optional[int] = None
+    if version is not None:
+        try:
+            version_arg = int(version)
+        except (TypeError, ValueError):
+            return {"error": f"Invalid version: {version}", "entity_id": entity_id}
+        if version_arg < 1:
+            return {"error": f"Invalid version: {version_arg}", "entity_id": entity_id}
+
+    try:
+        entity_ops = get_entity_operations(ctx)
+        provenance = entity_ops["base"].get_entity_provenance(entity_id, version=version_arg)
+        if version_arg is not None:
+            provenance.setdefault("version", version_arg)
+        return provenance
+    except ConnectionAuthError as exc:
+        result = {"error": f"Authentication required: {exc}", "entity_id": entity_id}
+        if version_arg is not None:
+            result["version"] = version_arg
+        return result
+    except SynapseHTTPError as exc:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None) or getattr(exc, "status_code", None)
+        message = str(exc)
+        if status_code == 404:
+            message = f"No provenance records found for entity {entity_id}"
+        result = {"error": message, "entity_id": entity_id}
+        if version_arg is not None:
+            result["version"] = version_arg
+        if status_code:
+            result["status_code"] = status_code
+        return result
+    except Exception as exc:  # pragma: no cover - defensive path
+        result = {"error": str(exc), "entity_id": entity_id}
+        if version_arg is not None:
+            result["version"] = version_arg
+        return result
 
 
 @mcp.tool(
@@ -235,6 +290,7 @@ def search_synapse(
 __all__ = [
     "get_entity",
     "get_entity_annotations",
+    "get_entity_provenance",
     "get_entity_children",
     "search_synapse",
 ]

@@ -1,5 +1,7 @@
+from collections.abc import Mapping
+from typing import Any, Dict, List, Optional
+
 import synapseclient
-from typing import Dict, List, Any, Optional, Union
 
 class BaseEntityOperations:
     """Base class for entity operations."""
@@ -22,7 +24,7 @@ class BaseEntityOperations:
     
     def get_entity_annotations(self, entity_id: str) -> Dict[str, Any]:
         """Get annotations for an entity.
-        
+
         Args:
             entity_id: The Synapse ID of the entity
             
@@ -36,6 +38,31 @@ class BaseEntityOperations:
         if annotations is None:
             return {}
         return annotations
+
+    def get_entity_provenance(self, entity_id: str, version: Optional[int] = None) -> Dict[str, Any]:
+        """Return provenance information for an entity version."""
+        activity = self.synapse_client.getProvenance(entity_id, version=version)
+
+        details: Dict[str, Any] = {}
+        if isinstance(activity, Mapping):
+            details.update(dict(activity))
+        elif hasattr(activity, "to_dict"):
+            try:
+                details.update(activity.to_dict())  # type: ignore[call-arg]
+            except Exception:
+                pass
+
+        if hasattr(activity, "__dict__"):
+            for key, value in vars(activity).items():
+                if key.startswith("_"):
+                    continue
+                details.setdefault(key, value)
+
+        details.setdefault("entityId", entity_id)
+        if version is not None and "version" not in details:
+            details["version"] = version
+
+        return details
     
     def format_entity(self, entity: Any) -> Dict[str, Any]:
         """Format a Synapse entity as a dictionary.

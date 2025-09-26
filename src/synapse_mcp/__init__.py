@@ -26,6 +26,7 @@ from .resources import (
 from .tools import (
     get_entity,
     get_entity_annotations,
+    get_entity_provenance,
     get_entity_children,
     search_synapse,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "get_dataset_by_id_or_name",
     "get_entity",
     "get_entity_annotations",
+    "get_entity_provenance",
     "get_entity_annotations_resource",
     "get_entity_by_id_or_name",
     "get_entity_operations",
