@@ -1,7 +1,7 @@
 """Tool registrations for Synapse MCP."""
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastmcp import Context
 from synapseclient.core.exceptions import SynapseHTTPError
@@ -31,6 +31,51 @@ def _normalize_fields(fields: Optional[List[str]]) -> List[str]:
     return normalized
 
 
+def _entity_error(
+    message: str,
+    *,
+    entity_id: Optional[str] = None,
+    version: Optional[int] = None,
+    status_code: Optional[int] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {"error": message}
+    if entity_id:
+        payload["entity_id"] = entity_id
+    if version is not None:
+        payload["version"] = version
+    if status_code is not None:
+        payload["status_code"] = status_code
+    return payload
+
+
+def _execute_entity_operation(
+    entity_id: str,
+    ctx: Context,
+    operation: Callable[[Dict[str, Any]], Any],
+    *,
+    version: Optional[int] = None,
+    on_exception: Optional[Callable[[Exception], Optional[Dict[str, Any]]]] = None,
+) -> Any:
+    if not validate_synapse_id(entity_id):
+        return {"error": f"Invalid Synapse ID: {entity_id}"}
+
+    try:
+        entity_ops = get_entity_operations(ctx)
+    except ConnectionAuthError as exc:
+        return _entity_error(f"Authentication required: {exc}", entity_id=entity_id, version=version)
+
+    try:
+        return operation(entity_ops)
+    except ConnectionAuthError as exc:
+        return _entity_error(f"Authentication required: {exc}", entity_id=entity_id, version=version)
+    except Exception as exc:  # pragma: no cover - defensive path
+        if on_exception:
+            handled = on_exception(exc)
+            if handled is not None:
+                return handled
+        return _entity_error(str(exc), entity_id=entity_id, version=version)
+
+
 @mcp.tool(
     title="Fetch Entity",
     description="Return Synapse entity metadata by ID (projects, folders, files, tables, etc.).",
@@ -43,16 +88,12 @@ def _normalize_fields(fields: Optional[List[str]]) -> List[str]:
 )
 def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return Synapse entity metadata by ID (projects, folders, files, tables, etc.)."""
-    if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
 
-    try:
-        entity_ops = get_entity_operations(ctx)
-        return entity_ops["base"].get_entity_by_id(entity_id)
-    except ConnectionAuthError as exc:
-        return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
-    except Exception as exc:  # pragma: no cover - defensive path
-        return {"error": str(exc), "entity_id": entity_id}
+    return _execute_entity_operation(
+        entity_id,
+        ctx,
+        lambda ops: ops["base"].get_entity_by_id(entity_id),
+    )
 
 
 @mcp.tool(
@@ -67,17 +108,12 @@ def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
 )
 def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return custom annotation key/value pairs for a Synapse entity."""
-    if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
 
-    try:
-        entity_ops = get_entity_operations(ctx)
-        annotations = entity_ops["base"].get_entity_annotations(entity_id)
-        return format_annotations(annotations)
-    except ConnectionAuthError as exc:
-        return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
-    except Exception as exc:  # pragma: no cover - defensive path
-        return {"error": str(exc), "entity_id": entity_id}
+    return _execute_entity_operation(
+        entity_id,
+        ctx,
+        lambda ops: format_annotations(ops["base"].get_entity_annotations(entity_id)),
+    )
 
 
 @mcp.tool(
@@ -100,38 +136,38 @@ def get_entity_provenance(entity_id: str, ctx: Context, version: Optional[int] =
         try:
             version_arg = int(version)
         except (TypeError, ValueError):
-            return {"error": f"Invalid version: {version}", "entity_id": entity_id}
+            return _entity_error(f"Invalid version: {version}", entity_id=entity_id)
         if version_arg < 1:
-            return {"error": f"Invalid version: {version_arg}", "entity_id": entity_id}
+            return _entity_error(f"Invalid version: {version_arg}", entity_id=entity_id)
 
-    try:
-        entity_ops = get_entity_operations(ctx)
+    def handle_exception(exc: Exception) -> Optional[Dict[str, Any]]:
+        if isinstance(exc, SynapseHTTPError):
+            response = getattr(exc, "response", None)
+            status_code = getattr(response, "status_code", None) or getattr(exc, "status_code", None)
+            message = str(exc)
+            if status_code == 404:
+                message = f"No provenance records found for entity {entity_id}"
+            return _entity_error(
+                message,
+                entity_id=entity_id,
+                version=version_arg,
+                status_code=status_code,
+            )
+        return None
+
+    def fetch(entity_ops: Dict[str, Any]) -> Dict[str, Any]:
         provenance = entity_ops["base"].get_entity_provenance(entity_id, version=version_arg)
         if version_arg is not None:
             provenance.setdefault("version", version_arg)
         return provenance
-    except ConnectionAuthError as exc:
-        result = {"error": f"Authentication required: {exc}", "entity_id": entity_id}
-        if version_arg is not None:
-            result["version"] = version_arg
-        return result
-    except SynapseHTTPError as exc:
-        response = getattr(exc, "response", None)
-        status_code = getattr(response, "status_code", None) or getattr(exc, "status_code", None)
-        message = str(exc)
-        if status_code == 404:
-            message = f"No provenance records found for entity {entity_id}"
-        result = {"error": message, "entity_id": entity_id}
-        if version_arg is not None:
-            result["version"] = version_arg
-        if status_code:
-            result["status_code"] = status_code
-        return result
-    except Exception as exc:  # pragma: no cover - defensive path
-        result = {"error": str(exc), "entity_id": entity_id}
-        if version_arg is not None:
-            result["version"] = version_arg
-        return result
+
+    return _execute_entity_operation(
+        entity_id,
+        ctx,
+        fetch,
+        version=version_arg,
+        on_exception=handle_exception,
+    )
 
 
 @mcp.tool(
