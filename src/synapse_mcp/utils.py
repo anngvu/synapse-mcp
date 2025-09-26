@@ -1,32 +1,5 @@
-import synapseclient
-from typing import Dict, List, Any, Optional, Union
+from typing import Any, Dict
 
-def format_synapse_entity(entity: Any) -> Dict[str, Any]:
-    """Format a Synapse entity as a dictionary.
-    
-    Args:
-        entity: The Synapse entity
-        
-    Returns:
-        The entity as a dictionary
-    """
-    # Convert entity to a dictionary
-    if hasattr(entity, 'to_dict'):
-        entity_dict = entity.to_dict()
-    else:
-        # If entity doesn't have to_dict method, convert it manually
-        entity_dict = {
-            'id': entity.id if hasattr(entity, 'id') else None,
-            'name': entity.name if hasattr(entity, 'name') else None,
-            'type': entity.concreteType.split('.')[-1] if hasattr(entity, 'concreteType') else None,
-            'parentId': entity.parentId if hasattr(entity, 'parentId') else None,
-            'createdOn': entity.createdOn if hasattr(entity, 'createdOn') else None,
-            'modifiedOn': entity.modifiedOn if hasattr(entity, 'modifiedOn') else None,
-            'createdBy': entity.createdBy if hasattr(entity, 'createdBy') else None,
-            'modifiedBy': entity.modifiedBy if hasattr(entity, 'modifiedBy') else None,
-        }
-    
-    return entity_dict
 
 def format_annotations(annotations: Any) -> Dict[str, Any]:
     """Format Synapse annotations as a dictionary.

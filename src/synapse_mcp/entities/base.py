@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import synapseclient
 
@@ -94,16 +94,3 @@ class BaseEntityOperations:
             }
         
         return entity_dict
-    
-    def query_entities(self, query_params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Query entities based on parameters.
-        
-        Args:
-            query_params: Query parameters
-            
-        Returns:
-            List of entities matching the query
-        """
-        # This will be implemented in the query module
-        # For now, return an empty list
-        return []
