@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for synapse-mcp on 2025-09-21T16:51:25-07:00
+# fly.toml app configuration file generated for synapse-research-mcp on 2025-09-21T16:51:25-07:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'synapse-mcp'
+app = 'synapse-research-mcp-staging'
 primary_region = 'sea'
 
 [build]
@@ -11,10 +11,10 @@ primary_region = 'sea'
 
 [env]
   HOST = '0.0.0.0'
-  MCP_SERVER_URL = 'https://synapse-mcp.fly.dev/mcp'
+  MCP_SERVER_URL = 'https://synapse-research-mcp-staging.fly.dev/mcp'
   MCP_TRANSPORT = 'streamable-http'
   PORT = '9000'
-  SYNAPSE_OAUTH_REDIRECT_URI='https://synapse-mcp.fly.dev/oauth/callback'
+  SYNAPSE_OAUTH_REDIRECT_URI='https://synapse-research-mcp-staging.fly.dev/oauth/callback'
 
 [http_service]
   internal_port = 9000
