@@ -10,12 +10,13 @@ You (your AI agent) can:
 
 ## Available Tools
 
-| Tool | Description |
-| --- | --- |
-| `get_entity(entity_id)` | Fetch core metadata for a Synapse entity by ID. |
-| `get_entity_annotations(entity_id)` | Return custom annotations associated with an entity. |
-| `get_entity_children(entity_id)` | List children for container entities such as projects and folders. |
-| `search_synapse(query_term=None, ...)` | Search Synapse entities by keyword with optional name/type/parent filters. Results are provided by Synapse as data custodian; attribution and licensing follow the source entity metadata. |
+| Tool function | Friendly tool name | Description |
+| --- | --- | --- |
+| `get_entity(entity_id)` | Fetch Entity | Return Synapse entity metadata by ID (projects, folders, files, tables, etc.). |
+| `get_entity_annotations(entity_id)` | Fetch Entity Annotations | Return custom annotation key/value pairs for a Synapse entity. |
+| `get_entity_provenance(entity_id, version=None)` | Fetch Entity Provenance | Return provenance activity for a Synapse entity, if available. |
+| `get_entity_children(entity_id)` | List Entity Children | List children for Synapse container entities such as projects and folders. |
+| `search_synapse(query_term=None, ...)` | Search Synapse | Search Synapse entities using keyword queries with optional name/type/parent filters. Results are provided by Synapse as data custodian; attribution and licensing follow the source entity metadata. |
 
 > Resources such as `entities/{id_or_name}` remain available for name-based lookups and table helpers.
 
