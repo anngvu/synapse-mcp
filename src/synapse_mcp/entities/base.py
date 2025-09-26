@@ -19,7 +19,7 @@ class BaseEntityOperations:
         Returns:
             The entity as a dictionary
         """
-        entity = self.synapse_client.get(entity_id)
+        entity = self.synapse_client.get(entity_id, downloadFile=False)
         return self.format_entity(entity)
     
     def get_entity_annotations(self, entity_id: str) -> Dict[str, Any]:
